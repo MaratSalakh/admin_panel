@@ -17,10 +17,42 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select";
+import { ref } from "vue";
+
+let counter = 0;
+
+const accountsList = ref<
+  {
+    id: number;
+    mark: string;
+    accountType: string | null;
+    login: string;
+    password: string;
+  }[]
+>([]);
+
+const addAccount = () => {
+  counter += 1;
+
+  accountsList.value.push({
+    id: counter,
+    mark: "",
+    accountType: null,
+    login: "",
+    password: "",
+  });
+};
+
+const deleteAccount = (id: number) => {
+  const newAccountsList = accountsList.value.filter(
+    (account) => account.id !== id,
+  );
+
+  accountsList.value = newAccountsList;
+};
 </script>
 
 <template>
@@ -28,41 +60,51 @@ import {
     <div class="flex w-9/12 flex-col gap-4 p-2 align-middle">
       <div class="flex justify-start gap-2 align-middle text-2xl">
         <h2>Учетные записи</h2>
-        <Button><Plus /></Button>
+        <Button @click="addAccount"><Plus /></Button>
       </div>
 
       <WarningText />
 
       <Table>
-        <TableCaption>Таблица</TableCaption>
+        <TableCaption> Таблица </TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead> Метки </TableHead>
-            <TableHead class="w-[200px]">Тип записи</TableHead>
-            <TableHead>Логин</TableHead>
+            <TableHead class="w-[200px]"> Тип записи </TableHead>
+            <TableHead> Логин </TableHead>
             <TableHead> Пароль </TableHead>
           </TableRow>
         </TableHeader>
+
         <TableBody>
-          <TableRow>
-            <TableCell class="font-medium"> <Input /> </TableCell>
+          <TableRow v-for="account in accountsList">
+            <TableCell class="font-medium">
+              <Input placeholder="Значение" />
+            </TableCell>
+
             <TableCell>
-              <Select>
+              <Select v-model="account.accountType">
                 <SelectTrigger class="w-[180px]">
                   <SelectValue placeholder="Тип записи" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="apple"> LDAP </SelectItem>
-                    <SelectItem value="banana"> Локальная </SelectItem>
+                    <SelectItem value="LDAP"> LDAP </SelectItem>
+                    <SelectItem value="local"> Локальная </SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
             </TableCell>
-            <TableCell> <Input /> </TableCell>
-            <TableCell> <Input type="password" /> </TableCell>
+
+            <TableCell> <Input placeholder="Значение" /> </TableCell>
+
+            <TableCell v-if="account.accountType === 'local'">
+              <Input type="password" placeholder="Значение" />
+            </TableCell>
+            <TableCell v-else></TableCell>
+
             <TableCell>
-              <Button variant="ghost">
+              <Button @click="deleteAccount(account.id)" variant="ghost">
                 <Trash2 />
               </Button>
             </TableCell>
