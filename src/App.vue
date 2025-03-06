@@ -20,39 +20,153 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select";
-import { ref } from "vue";
+import { useAccountsStore } from "./store/accounts";
+import { onMounted, ref } from "vue";
+import type { Account } from "./models/account";
+import type { AcceptableValue } from "reka-ui";
 
-let counter = 0;
+const store = useAccountsStore();
 
-const accountsList = ref<
-  {
-    id: number;
-    mark: string;
-    accountType: string | null;
-    login: string;
-    password: string;
-  }[]
->([]);
+const accountsList = ref<Account[]>([]);
 
-const addAccount = () => {
-  counter += 1;
+function addAccount() {
+  store.counter += 1;
 
   accountsList.value.push({
-    id: counter,
+    id: store.counter,
     mark: "",
+    validateMark: true,
     accountType: null,
     login: "",
+    validateLogin: true,
     password: "",
+    validatePassword: true,
   });
-};
 
-const deleteAccount = (id: number) => {
+  store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
+  store.saveToLocalStorage();
+}
+
+function deleteAccount(id: number) {
   const newAccountsList = accountsList.value.filter(
     (account) => account.id !== id,
   );
 
   accountsList.value = newAccountsList;
-};
+
+  store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
+  store.saveToLocalStorage();
+}
+
+function validateMarkHandler(account: Account) {
+  const currentAccount = accountsList.value.find(
+    (item) => item.id === account.id,
+  );
+
+  if (!currentAccount) {
+    return;
+  }
+
+  if (account.mark.length > 50) {
+    currentAccount.validateMark = false;
+  }
+
+  if (account.mark.length < 50) {
+    currentAccount.validateMark = true;
+  }
+
+  // transform string to array
+
+  const transformedList = JSON.parse(JSON.stringify(accountsList.value));
+
+  const transformedAccount = transformedList.find(
+    (item: Account) => item.id === account.id,
+  );
+
+  transformedAccount.mark = currentAccount.mark.split(";");
+  transformedAccount.mark = transformedAccount.mark.map((item: string) => ({
+    text: item.trim(),
+  }));
+
+  if (currentAccount.validateMark) {
+    store.accountsList = JSON.parse(JSON.stringify(transformedList));
+    store.saveToLocalStorage();
+  }
+}
+
+function validateLoginHandler(account: Account) {
+  const currentAccount = accountsList.value.find(
+    (item) => item.id === account.id,
+  );
+
+  if (!currentAccount) {
+    return;
+  }
+
+  if (account.login.length === 0 || account.login.length > 100) {
+    currentAccount.validateLogin = false;
+  } else {
+    currentAccount.validateLogin = true;
+  }
+
+  if (currentAccount.validateLogin) {
+    store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
+    store.saveToLocalStorage();
+  }
+}
+
+function validatePasswordHandler(account: Account) {
+  const currentAccount = accountsList.value.find(
+    (item) => item.id === account.id,
+  );
+
+  if (!currentAccount) {
+    return;
+  }
+
+  if (account.password.length === 0 || account.password.length > 100) {
+    currentAccount.validatePassword = false;
+  } else {
+    currentAccount.validatePassword = true;
+  }
+
+  if (currentAccount.validatePassword) {
+    store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
+    store.saveToLocalStorage();
+  }
+}
+
+function validateTypeAccount(account: Account, value: AcceptableValue) {
+  const currentAccount = accountsList.value.find(
+    (item) => item.id === account.id,
+  );
+
+  if (!currentAccount) {
+    return;
+  }
+
+  if (!value) {
+    return;
+  }
+
+  currentAccount.accountType = value?.toString();
+
+  store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
+  store.saveToLocalStorage();
+}
+
+// Метод для загрузки состояния из localStorage
+function loadFromLocalStorage() {
+  const accounts = localStorage.getItem("accounts");
+  if (accounts) {
+    accountsList.value = JSON.parse(accounts);
+  }
+}
+
+onMounted(() => {
+  loadFromLocalStorage();
+  store.loadFromLocalStorage();
+});
 </script>
 
 <template>
@@ -79,11 +193,24 @@ const deleteAccount = (id: number) => {
         <TableBody>
           <TableRow v-for="account in accountsList">
             <TableCell class="font-medium">
-              <Input placeholder="Значение" />
+              <Input
+                @change="validateMarkHandler(account)"
+                :class="{
+                  'border-red-500': !account.validateMark,
+                  'border-4': !account.validateMark,
+                }"
+                v-model="account.mark"
+                placeholder="Значение"
+              />
             </TableCell>
 
             <TableCell>
-              <Select v-model="account.accountType">
+              <Select
+                @update:modelValue="
+                  (value) => validateTypeAccount(account, value)
+                "
+                :modelValue="account.accountType"
+              >
                 <SelectTrigger class="w-[180px]">
                   <SelectValue placeholder="Тип записи" />
                 </SelectTrigger>
@@ -96,10 +223,29 @@ const deleteAccount = (id: number) => {
               </Select>
             </TableCell>
 
-            <TableCell> <Input placeholder="Значение" /> </TableCell>
+            <TableCell>
+              <Input
+                @change="validateLoginHandler(account)"
+                :class="{
+                  'border-red-500': !account.validateLogin,
+                  'border-4': !account.validateLogin,
+                }"
+                v-model="account.login"
+                placeholder="Значение"
+              />
+            </TableCell>
 
             <TableCell v-if="account.accountType === 'local'">
-              <Input type="password" placeholder="Значение" />
+              <Input
+                @input="validatePasswordHandler(account)"
+                :class="{
+                  'border-red-500': !account.validatePassword,
+                  'border-4': !account.validatePassword,
+                }"
+                v-model="account.password"
+                type="password"
+                placeholder="Значение"
+              />
             </TableCell>
             <TableCell v-else></TableCell>
 
