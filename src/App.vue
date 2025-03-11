@@ -24,10 +24,59 @@ import { useAccountsStore } from "./store/accounts";
 import { onMounted, ref } from "vue";
 import type { Account } from "./models/account";
 import type { AcceptableValue } from "reka-ui";
+import lodash from "lodash";
 
 const store = useAccountsStore();
-
 const accountsList = ref<Account[]>([]);
+
+function validation_saveToStore(
+  currentAccount: Account,
+  value?: AcceptableValue,
+) {
+  validateMarkHandler(currentAccount);
+  validateTypeAccount(currentAccount, value);
+  validateLoginHandler(currentAccount);
+  validatePasswordHandler(currentAccount);
+
+  if (
+    currentAccount.validateMark &&
+    currentAccount.validateLogin &&
+    currentAccount.validatePassword
+  ) {
+    const currentStoreAccountIndex = store.accountsList.findIndex(
+      (item) => item.id === currentAccount.id,
+    );
+
+    const normalizedMark = currentAccount.mark
+      .split(";")
+      .map((item: string) => ({
+        text: item.trim(),
+      }));
+
+    let normalizedAccount;
+    if (currentAccount.accountType === "LDAP") {
+      normalizedAccount = {
+        ...currentAccount,
+        mark: normalizedMark,
+        password: null,
+      };
+    } else {
+      normalizedAccount = {
+        ...currentAccount,
+        mark: normalizedMark,
+      };
+    }
+
+    if (currentStoreAccountIndex === -1) {
+      store.accountsList.push(lodash.cloneDeep(normalizedAccount));
+    } else {
+      store.accountsList[currentStoreAccountIndex] =
+        lodash.cloneDeep(normalizedAccount);
+    }
+
+    store.saveToLocalStorage();
+  }
+}
 
 function addAccount() {
   store.counter += 1;
@@ -42,9 +91,6 @@ function addAccount() {
     password: "",
     validatePassword: true,
   });
-
-  store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
-  store.saveToLocalStorage();
 }
 
 function deleteAccount(id: number) {
@@ -53,9 +99,6 @@ function deleteAccount(id: number) {
   );
 
   accountsList.value = newAccountsList;
-
-  store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
-  store.saveToLocalStorage();
 }
 
 function validateMarkHandler(account: Account) {
@@ -74,97 +117,50 @@ function validateMarkHandler(account: Account) {
   if (account.mark.length < 50) {
     currentAccount.validateMark = true;
   }
-
-  // transform string to array
-
-  const transformedList = JSON.parse(JSON.stringify(accountsList.value));
-
-  const transformedAccount = transformedList.find(
-    (item: Account) => item.id === account.id,
-  );
-
-  transformedAccount.mark = currentAccount.mark.split(";");
-  transformedAccount.mark = transformedAccount.mark.map((item: string) => ({
-    text: item.trim(),
-  }));
-
-  if (currentAccount.validateMark) {
-    store.accountsList = JSON.parse(JSON.stringify(transformedList));
-    store.saveToLocalStorage();
-  }
 }
 
 function validateLoginHandler(account: Account) {
-  const currentAccount = accountsList.value.find(
-    (item) => item.id === account.id,
-  );
-
-  if (!currentAccount) {
-    return;
-  }
-
   if (account.login.length === 0 || account.login.length > 100) {
-    currentAccount.validateLogin = false;
+    account.validateLogin = false;
   } else {
-    currentAccount.validateLogin = true;
-  }
-
-  if (currentAccount.validateLogin) {
-    store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
-    store.saveToLocalStorage();
+    account.validateLogin = true;
   }
 }
 
 function validatePasswordHandler(account: Account) {
-  const currentAccount = accountsList.value.find(
-    (item) => item.id === account.id,
-  );
+  if (account.accountType === "LDAP") {
+    account.validatePassword = true;
+    return;
+  }
 
-  if (!currentAccount) {
+  if (!account.password) {
+    account.validatePassword = false;
     return;
   }
 
   if (account.password.length === 0 || account.password.length > 100) {
-    currentAccount.validatePassword = false;
+    account.validatePassword = false;
   } else {
-    currentAccount.validatePassword = true;
-  }
-
-  if (currentAccount.validatePassword) {
-    store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
-    store.saveToLocalStorage();
+    account.validatePassword = true;
   }
 }
 
-function validateTypeAccount(account: Account, value: AcceptableValue) {
-  const currentAccount = accountsList.value.find(
-    (item) => item.id === account.id,
-  );
-
-  if (!currentAccount) {
-    return;
-  }
-
+function validateTypeAccount(
+  account: Account,
+  value: AcceptableValue | undefined,
+) {
   if (!value) {
     return;
   }
 
-  currentAccount.accountType = value?.toString();
+  account.accountType = value?.toString();
 
-  store.accountsList = JSON.parse(JSON.stringify(accountsList.value));
-  store.saveToLocalStorage();
-}
-
-// Метод для загрузки состояния из localStorage
-function loadFromLocalStorage() {
-  const accounts = localStorage.getItem("accounts");
-  if (accounts) {
-    accountsList.value = JSON.parse(accounts);
+  if (account.accountType === "LDAP") {
+    account.password = "";
   }
 }
 
 onMounted(() => {
-  loadFromLocalStorage();
   store.loadFromLocalStorage();
 });
 </script>
@@ -194,7 +190,7 @@ onMounted(() => {
           <TableRow v-for="account in accountsList">
             <TableCell class="font-medium">
               <Input
-                @change="validateMarkHandler(account)"
+                @change="validation_saveToStore(account)"
                 :class="{
                   'border-red-500': !account.validateMark,
                   'border-4': !account.validateMark,
@@ -207,7 +203,7 @@ onMounted(() => {
             <TableCell>
               <Select
                 @update:modelValue="
-                  (value) => validateTypeAccount(account, value)
+                  (value) => validation_saveToStore(account, value)
                 "
                 :modelValue="account.accountType"
               >
@@ -225,7 +221,7 @@ onMounted(() => {
 
             <TableCell>
               <Input
-                @change="validateLoginHandler(account)"
+                @change="validation_saveToStore(account)"
                 :class="{
                   'border-red-500': !account.validateLogin,
                   'border-4': !account.validateLogin,
@@ -237,7 +233,7 @@ onMounted(() => {
 
             <TableCell v-if="account.accountType === 'local'">
               <Input
-                @input="validatePasswordHandler(account)"
+                @change="validation_saveToStore(account)"
                 :class="{
                   'border-red-500': !account.validatePassword,
                   'border-4': !account.validatePassword,
