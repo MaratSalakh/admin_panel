@@ -3,6 +3,7 @@ export type Account = {
   mark: string;
   validateMark: boolean;
   accountType: string | null;
+  validateAccountType: boolean;
   login: string;
   validateLogin: boolean;
   password: string;
@@ -14,6 +15,7 @@ export type NewAccount = {
   mark: { text: string }[];
   validateMark: boolean;
   accountType: string | null;
+  validateAccountType: boolean;
   login: string;
   validateLogin: boolean;
   password: string | null;
