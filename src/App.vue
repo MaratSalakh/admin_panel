@@ -22,70 +22,69 @@ import {
 } from "./components/ui/select";
 import { useAccountsStore } from "./store/accounts";
 import { onMounted, ref } from "vue";
-import type { Account } from "./models/account";
+import type { Account, NewAccount } from "./models/accountTypes.ts";
 import type { AcceptableValue } from "reka-ui";
 import lodash from "lodash";
 
 const store = useAccountsStore();
 const accountsList = ref<Account[]>([]);
 
-function validation_saveToStore(
-  currentAccount: Account,
-  value?: AcceptableValue,
-) {
+function saveToStore(currentAccount: Account) {
+  const currentStoreAccountIndex = store.accountsList.findIndex(
+    (item) => item.id === currentAccount.id,
+  );
+
+  const normalizedMark = currentAccount.mark.split(";").map((item: string) => ({
+    text: item.trim(),
+  }));
+
+  let normalizedAccount;
+  if (currentAccount.accountType === "LDAP") {
+    normalizedAccount = {
+      ...currentAccount,
+      mark: normalizedMark,
+      password: null,
+    };
+  } else {
+    normalizedAccount = {
+      ...currentAccount,
+      mark: normalizedMark,
+    };
+  }
+
+  if (currentStoreAccountIndex === -1) {
+    store.accountsList.push(lodash.cloneDeep(normalizedAccount));
+  } else {
+    store.accountsList[currentStoreAccountIndex] =
+      lodash.cloneDeep(normalizedAccount);
+  }
+
+  store.saveToLocalStorage();
+}
+
+function validation(currentAccount: Account) {
   validateMarkHandler(currentAccount);
-  validateTypeAccount(currentAccount, value);
+  validateTypeAccount(currentAccount);
   validateLoginHandler(currentAccount);
   validatePasswordHandler(currentAccount);
 
   if (
     currentAccount.validateMark &&
     currentAccount.validateLogin &&
-    currentAccount.validatePassword
+    currentAccount.validatePassword &&
+    currentAccount.validateAccountType
   ) {
-    const currentStoreAccountIndex = store.accountsList.findIndex(
-      (item) => item.id === currentAccount.id,
-    );
-
-    const normalizedMark = currentAccount.mark
-      .split(";")
-      .map((item: string) => ({
-        text: item.trim(),
-      }));
-
-    let normalizedAccount;
-    if (currentAccount.accountType === "LDAP") {
-      normalizedAccount = {
-        ...currentAccount,
-        mark: normalizedMark,
-        password: null,
-      };
-    } else {
-      normalizedAccount = {
-        ...currentAccount,
-        mark: normalizedMark,
-      };
-    }
-
-    if (currentStoreAccountIndex === -1) {
-      store.accountsList.push(lodash.cloneDeep(normalizedAccount));
-    } else {
-      store.accountsList[currentStoreAccountIndex] =
-        lodash.cloneDeep(normalizedAccount);
-    }
-
-    store.saveToLocalStorage();
+    saveToStore(currentAccount);
   }
 }
 
 function addAccount() {
-  store.counter += 1;
-
   accountsList.value.push({
-    id: store.counter,
+    id: accountsList.value.length + 1,
     mark: "",
     validateMark: true,
     accountType: null,
+    validateAccountType: true,
     login: "",
     validateLogin: true,
     password: "",
@@ -94,11 +93,12 @@ function addAccount() {
 }
 
 function deleteAccount(id: number) {
-  const newAccountsList = accountsList.value.filter(
+  accountsList.value = accountsList.value.filter(
     (account) => account.id !== id,
   );
 
-  accountsList.value = newAccountsList;
+  store.deleteAccount(id);
+  store.saveToLocalStorage();
 }
 
 function validateMarkHandler(account: Account) {
@@ -122,9 +122,9 @@ function validateMarkHandler(account: Account) {
 function validateLoginHandler(account: Account) {
   if (account.login.length === 0 || account.login.length > 100) {
     account.validateLogin = false;
-  } else {
-    account.validateLogin = true;
+    return;
   }
+  account.validateLogin = true;
 }
 
 function validatePasswordHandler(account: Account) {
@@ -140,16 +140,30 @@ function validatePasswordHandler(account: Account) {
 
   if (account.password.length === 0 || account.password.length > 100) {
     account.validatePassword = false;
-  } else {
-    account.validatePassword = true;
+    return;
+  }
+  account.validatePassword = true;
+}
+
+function validateTypeAccount(account: Account) {
+  if (account.accountType === null) {
+    account.validateAccountType = false;
+  }
+
+  if (account.accountType === "local") {
+    account.validateAccountType = true;
+  }
+
+  if (account.accountType === "LDAP") {
+    account.validateAccountType = true;
   }
 }
 
-function validateTypeAccount(
+function typeAccountHandler(
   account: Account,
   value: AcceptableValue | undefined,
 ) {
-  if (!value) {
+  if (value === null || value === undefined) {
     return;
   }
 
@@ -158,10 +172,31 @@ function validateTypeAccount(
   if (account.accountType === "LDAP") {
     account.password = "";
   }
+
+  validation(account);
 }
+
+const normilizeStoreData = (storeData: NewAccount[]) => {
+  return storeData.map((account) => {
+    const normilizeMark = account.mark.reduce((acc, currentValue) => {
+      return acc === "" ? currentValue.text : `${acc};${currentValue.text}`;
+    }, "");
+
+    if (account.password === null) {
+      return { ...account, password: "", mark: normilizeMark };
+    }
+
+    return {
+      ...account,
+      password: `${account.password}`,
+      mark: normilizeMark,
+    };
+  });
+};
 
 onMounted(() => {
   store.loadFromLocalStorage();
+  accountsList.value = normilizeStoreData(store.accountsList);
 });
 </script>
 
@@ -190,7 +225,7 @@ onMounted(() => {
           <TableRow v-for="account in accountsList">
             <TableCell class="font-medium">
               <Input
-                @change="validation_saveToStore(account)"
+                @change="validation(account)"
                 :class="{
                   'border-red-500': !account.validateMark,
                   'border-4': !account.validateMark,
@@ -203,12 +238,17 @@ onMounted(() => {
             <TableCell>
               <Select
                 @update:modelValue="
-                  (value) => validation_saveToStore(account, value)
+                  (value) => typeAccountHandler(account, value)
                 "
                 :modelValue="account.accountType"
               >
                 <SelectTrigger class="w-[180px]">
-                  <SelectValue placeholder="Тип записи" />
+                  <SelectValue
+                    :class="{
+                      'text-red-500': !account.validateAccountType,
+                    }"
+                    placeholder="Тип записи"
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
@@ -221,7 +261,7 @@ onMounted(() => {
 
             <TableCell>
               <Input
-                @change="validation_saveToStore(account)"
+                @change="validation(account)"
                 :class="{
                   'border-red-500': !account.validateLogin,
                   'border-4': !account.validateLogin,
@@ -233,7 +273,7 @@ onMounted(() => {
 
             <TableCell v-if="account.accountType === 'local'">
               <Input
-                @change="validation_saveToStore(account)"
+                @change="validation(account)"
                 :class="{
                   'border-red-500': !account.validatePassword,
                   'border-4': !account.validatePassword,
